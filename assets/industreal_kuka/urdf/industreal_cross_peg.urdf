@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<robot name="industreal_cross_peg">
+    <link name="industreal_cross_peg">
+        <visual>
+            <geometry>
+                <mesh filename="../mesh/industreal_pegs/industreal_cross_peg.obj"/>
+            </geometry>
+        </visual>
+        <collision>
+            <geometry>
+                <mesh filename="../mesh/industreal_pegs/industreal_cross_peg.obj"/>
+            </geometry>
+            <sdf resolution="256"/>
+        </collision>
+    </link>
+</robot>
