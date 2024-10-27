@@ -61,6 +61,11 @@ class FactoryABCBase(ABC):
         pass
 
     @abstractmethod
+    def import_kuka_assets(self):
+        """Set Kuka and table asset options. Import assets."""
+        pass
+
+    @abstractmethod
     def acquire_base_tensors(self):
         """Acquire and wrap tensors. Create views."""
         pass
