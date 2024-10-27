@@ -290,7 +290,6 @@ class FactoryKukaBase(VecTask, FactoryABCBase):
         raise NotImplementedError
 
     def disable_gravity(self):
-        # TODO(dhanush): Refactor
         """Disable gravity."""
 
         sim_params = self.gym.get_sim_params(self.sim)
@@ -298,7 +297,6 @@ class FactoryKukaBase(VecTask, FactoryABCBase):
         self.gym.set_sim_params(self.sim, sim_params)
 
     def export_scene(self, label):
-        # TODO(dhanush): Refactor
         """Export scene to USD."""
 
         usd_export_options = gymapi.UsdExportOptions()

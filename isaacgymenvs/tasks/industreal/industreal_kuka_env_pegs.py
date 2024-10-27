@@ -467,7 +467,7 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
         self.socket_heights = torch.tensor(self.socket_heights, device=self.device)
 
     def _acquire_env_tensors(self):
-        # TODO(dhanush): Validate
+        # TODO(dhanush): Refactor
         """Acquire and wrap tensors. Create views."""
 
         self.plug_pos = self.root_pos[:, self.plug_actor_id_env, 0:3]

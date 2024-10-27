@@ -451,6 +451,7 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
         return pos_in_robot_base, quat_in_robot_base
     
     def move_gripper_to_target_pose(self, gripper_dof_pos, sim_steps):
+        # TODO(dhanush): Refactor
         """Move gripper to control target pose."""
 
         for _ in range(sim_steps):
