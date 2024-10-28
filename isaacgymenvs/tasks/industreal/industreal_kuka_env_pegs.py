@@ -77,13 +77,13 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
         self.refresh_env_tensors()  # NOTE : just pass IG
 
     def _get_env_yaml_params(self):
-        # TODO(dhanush): Refactor
+        # TODO(dhanush): Validate
         """Initialize instance variables from YAML files."""
 
         cs = hydra.core.config_store.ConfigStore.instance()
         cs.store(name="factory_schema_config_env", node=FactorySchemaConfigEnv)
 
-        # NOTE(dhanush) : changed the yaml
+        # NOTE(dhanush) : changed the yaml, contains the subassemblies we want to use
         config_path = "task/IndustRealKukaEnvPegs.yaml"  # relative to Gym's Hydra search path (cfg dir)
         self.cfg_env = hydra.compose(config_name=config_path)
         self.cfg_env = self.cfg_env["task"]  # strip superfluous nesting

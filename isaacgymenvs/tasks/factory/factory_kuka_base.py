@@ -106,6 +106,7 @@ class FactoryKukaBase(VecTask, FactoryABCBase):
         """Refresh tensors."""
         # NOTE: Tensor refresh functions should be called once per step, before setters.
 
+        # NOTE(dhanush): This refreshing should be fine as is
         self.gym.refresh_dof_state_tensor(self.sim)
         self.gym.refresh_actor_root_state_tensor(self.sim)
         self.gym.refresh_rigid_body_state_tensor(self.sim)
@@ -114,6 +115,7 @@ class FactoryKukaBase(VecTask, FactoryABCBase):
         self.gym.refresh_jacobian_tensors(self.sim)
         self.gym.refresh_mass_matrix_tensors(self.sim)
 
+        # TODO(dhanush): This is what needs to be replaced
         self.finger_midpoint_pos = (self.left_finger_pos + self.right_finger_pos) * 0.5
         self.fingertip_midpoint_pos = fc.translate_along_local_z(pos=self.finger_midpoint_pos,
                                                                  quat=self.hand_quat,
@@ -127,7 +129,7 @@ class FactoryKukaBase(VecTask, FactoryABCBase):
 
 
     def parse_controller_spec(self):
-        # TODO(dhanush): Refactor
+        # TODO(dhanush): The gripper part, just leave it? figure out
         """Parse controller specification into lower-level controller configuration."""
 
         cfg_ctrl_keys = {'num_envs',
@@ -152,6 +154,7 @@ class FactoryKukaBase(VecTask, FactoryABCBase):
 
         self.cfg_ctrl['num_envs'] = self.num_envs
         self.cfg_ctrl['jacobian_type'] = self.cfg_task.ctrl.all.jacobian_type
+        # TODO(dhanush): We should not need these gains for the gripper
         self.cfg_ctrl['gripper_prop_gains'] = torch.tensor(self.cfg_task.ctrl.all.gripper_prop_gains,
                                                            device=self.device).repeat((self.num_envs, 1))
         self.cfg_ctrl['gripper_deriv_gains'] = torch.tensor(self.cfg_task.ctrl.all.gripper_deriv_gains,
@@ -188,7 +191,7 @@ class FactoryKukaBase(VecTask, FactoryABCBase):
             self.cfg_ctrl['joint_deriv_gains'] = torch.tensor(self.cfg_task.ctrl.joint_space_id.joint_deriv_gains,
                                                               device=self.device).repeat((self.num_envs, 1))
             self.cfg_ctrl['do_inertial_comp'] = True
-        elif ctrl_type == 'task_space_impedance':
+        elif ctrl_type == 'task_space_impedance':  # NOTE(dhanush): This is whats used for this paper.
             self.cfg_ctrl['motor_ctrl_mode'] = 'manual'
             self.cfg_ctrl['gain_space'] = 'task'
             self.cfg_ctrl['do_motion_ctrl'] = True
@@ -250,7 +253,7 @@ class FactoryKukaBase(VecTask, FactoryABCBase):
             self.cfg_ctrl['force_ctrl_axes'] = torch.tensor(self.cfg_task.ctrl.hybrid_force_motion.force_ctrl_axes,
                                                             device=self.device).repeat((self.num_envs, 1))
 
-        if self.cfg_ctrl['motor_ctrl_mode'] == 'gym':
+        if self.cfg_ctrl['motor_ctrl_mode'] == 'gym':  # NOTE(dhanush): Not pertained to TSI
             prop_gains = torch.cat((self.cfg_ctrl['joint_prop_gains'],
                                     self.cfg_ctrl['gripper_prop_gains']), dim=-1).to('cpu')
             deriv_gains = torch.cat((self.cfg_ctrl['joint_deriv_gains'],
@@ -263,14 +266,14 @@ class FactoryKukaBase(VecTask, FactoryABCBase):
                 franka_dof_props['stiffness'] = prop_gain
                 franka_dof_props['damping'] = deriv_gain
                 self.gym.set_actor_dof_properties(env_ptr, franka_handle, franka_dof_props)
-        elif self.cfg_ctrl['motor_ctrl_mode'] == 'manual':
+        elif self.cfg_ctrl['motor_ctrl_mode'] == 'manual':  # NOTE(dhanush): This is used by TSI, hence changed it to Kuka handles
             # No tensor API for getting/setting actor DOF props; thus, loop required
-            for env_ptr, franka_handle in zip(self.env_ptrs, self.franka_handles):
-                franka_dof_props = self.gym.get_actor_dof_properties(env_ptr, franka_handle)
-                franka_dof_props['driveMode'][:] = gymapi.DOF_MODE_EFFORT
-                franka_dof_props['stiffness'][:] = 0.0  # zero passive stiffness
-                franka_dof_props['damping'][:] = 0.0  # zero passive damping
-                self.gym.set_actor_dof_properties(env_ptr, franka_handle, franka_dof_props)
+            for env_ptr, kuka_handles in zip(self.env_ptrs, self.kuka_handles):
+                kuka_dof_props = self.gym.get_actor_dof_properties(env_ptr, kuka_handles)
+                kuka_dof_props['driveMode'][:] = gymapi.DOF_MODE_EFFORT
+                kuka_dof_props['stiffness'][:] = 0.0  # zero passive stiffness
+                kuka_dof_props['damping'][:] = 0.0  # zero passive damping
+                self.gym.set_actor_dof_properties(env_ptr, kuka_handles, kuka_dof_props)
 
     def generate_ctrl_signals(self):
         raise NotImplementedError
