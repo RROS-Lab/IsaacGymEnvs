@@ -100,7 +100,7 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
             self._set_viewer_params()
 
     def _get_task_yaml_params(self):
-        # TODO(dhanush) : Do we need seperate yaml, since it pertains to the PPO anyway? mostly not
+        # TODO(dhanush) : Seperate YAML not needed afaik, Valdiate...
         """Initialize instance variables from YAML files."""
 
         cs = hydra.core.config_store.ConfigStore.instance()
@@ -127,27 +127,29 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         )
 
         # Compute pose of gripper goal and top of socket in socket frame
+        # TODO(dhanush) : Carefully deal with this! Instead of gripper for us its the plug itself??? Should I rename it or leave it as is?
         self.gripper_goal_pos_local = torch.tensor(
             [
                 [
                     0.0,
                     0.0,
-                    (self.cfg_task.env.socket_base_height + self.plug_grasp_offsets[i]),  # TODO(dhanush) : change socket_base_height for us
+                    # (self.cfg_task.env.socket_base_height),
+                    (self.cfg_task.env.socket_base_height + self.plug_grasp_offsets[i]),  # TODO(dhanush): I kept this because, lets assume infitesimally small gripper at link_ee!!!
                 ]
                 for i in range(self.num_envs)
             ],
             device=self.device,
         )
-        self.gripper_goal_quat_local = self.identity_quat.clone()
+        self.gripper_goal_quat_local = self.identity_quat.clone()  # NOTE(dhanush): This should be fine for us too.
 
         self.socket_top_pos_local = torch.tensor(
-            [[0.0, 0.0, self.socket_heights[i]] for i in range(self.num_envs)],  # TODO(dhanush) : check socket_heights for us?
+            [[0.0, 0.0, self.socket_heights[i]] for i in range(self.num_envs)],  # TODO(dhanush) : confirm what is socket height. Refer to Notion.
             device=self.device,
         )
         self.socket_quat_local = self.identity_quat.clone()
 
         # Define keypoint tensors
-        # TODO(dhanush) : Understand this.
+        # TODO(dhanush) : Do I need to modify anything below?
         self.keypoint_offsets = (
             algo_utils.get_keypoint_offsets(self.cfg_task.rl.num_keypoints, self.device)
             * self.cfg_task.rl.keypoint_scale
@@ -171,6 +173,7 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         # TODO(dhanush) : Refactor
         """Refresh tensors."""
 
+        # NOTE(dhanush): For us this gripper pertains to link_ee
         # Compute pose of gripper goal and top of socket in global frame
         self.gripper_goal_quat, self.gripper_goal_pos = torch_jit_utils.tf_combine(
             self.socket_quat,
@@ -276,21 +279,21 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
 
         self.progress_buf[:] += 1
 
-        self.refresh_base_tensors()  # TODO(dhanush)
+        self.refresh_base_tensors()  # TODO (dhanush): Validate
         self.refresh_env_tensors()  # NOTE : just does pass !
-        self._refresh_task_tensors()  # TODO(dhanush)
+        self._refresh_task_tensors()  # TODO(dhanush): 
         self.compute_observations()
         self.compute_reward()
 
     def compute_observations(self):
-        # TODO(dhanush) : Refactor
+        # TODO(dhanush) : Validate | Reduced the number of observations for the critic, since we dont actually have finger-tips
         """Compute observations."""
 
         delta_pos = self.gripper_goal_pos - self.fingertip_centered_pos
         noisy_delta_pos = self.noisy_gripper_goal_pos - self.fingertip_centered_pos
 
         # Define observations (for actor)
-        # TODO(dhanush) : Replace figertip position with eef link of kuka
+        # TODO(dhanush) : For us gripper --> link_ee
         obs_tensors = [
             self.arm_dof_pos,  # 7
             self.pose_world_to_robot_base(
@@ -317,22 +320,22 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         ]  # 3
 
         # Define state (for critic)
-        # TODO(dhanush) : Replace figertip position with eef link of kuka
+        # NOTE(dhanush): For us there is no finger tip, and the gripper is the link_ee. Hence commneted out below
         state_tensors = [
             self.arm_dof_pos,  # 7
             self.arm_dof_vel,  # 7
-            self.pose_world_to_robot_base(
-                self.fingertip_centered_pos, self.fingertip_centered_quat
-            )[
-                0
-            ],  # 3
-            self.pose_world_to_robot_base(
-                self.fingertip_centered_pos, self.fingertip_centered_quat
-            )[
-                1
-            ],  # 4
-            self.fingertip_centered_linvel,  # 3
-            self.fingertip_centered_angvel,  # 3
+            # self.pose_world_to_robot_base(
+            #     self.fingertip_centered_pos, self.fingertip_centered_quat
+            # )[
+            #     0
+            # ],  # 3
+            # self.pose_world_to_robot_base(
+            #     self.fingertip_centered_pos, self.fingertip_centered_quat
+            # )[
+            #     1
+            # ],  # 4
+            # self.fingertip_centered_linvel,  # 3
+            # self.fingertip_centered_angvel,  # 3
             self.pose_world_to_robot_base(
                 self.gripper_goal_pos, self.gripper_goal_quat
             )[
@@ -363,13 +366,13 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         self._update_reset_buf()  # NOTE(dhanush) : This is fine
 
     def _update_rew_buf(self):
-        # TODO(dhanush) : If I am able to verify that only the pose of plug is required, I can make the changes
+        # TODO(dhanush) : Validate
         """Compute reward at current timestep."""
 
         self.prev_rew_buf = self.rew_buf.clone()
 
         # SDF-Based Reward: Compute reward based on SDF distance
-        sdf_reward = algo_utils.get_sdf_reward(  # NOTE: only uses plug pos
+        sdf_reward = algo_utils.get_sdf_reward(  # NOTE: only uses plug pose, should be fine
             wp_plug_meshes_sampled_points=self.wp_plug_meshes_sampled_points,
             asset_indices=self.asset_indices,
             plug_pos=self.plug_pos,
@@ -391,7 +394,7 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
             low_interpen_envs,
             high_interpen_envs,
             sapu_reward_scale,
-        ) = algo_utils.get_sapu_reward_scale(  # NOTE: only uses plug pos, but keep in mind that it need the mesh sampled by warp
+        ) = algo_utils.get_sapu_reward_scale(  # NOTE: only uses plug pose, should be fine
             asset_indices=self.asset_indices,
             plug_pos=self.plug_pos,
             plug_quat=self.plug_quat,
@@ -417,7 +420,7 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         is_last_step = self.progress_buf[0] == self.max_episode_length - 1
         if is_last_step:
             # Success bonus: Check which envs have plug engaged (partially inserted) or fully inserted
-            is_plug_engaged_w_socket = algo_utils.check_plug_engaged_w_socket(  # TODO(dhanush): only plug pos and keypoints
+            is_plug_engaged_w_socket = algo_utils.check_plug_engaged_w_socket(  # NOTE: only uses plug pose, should be fine
                 plug_pos=self.plug_pos,
                 socket_top_pos=self.socket_top_pos,
                 keypoints_plug=self.keypoints_plug,
@@ -425,7 +428,7 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
                 cfg_task=self.cfg_task,
                 progress_buf=self.progress_buf,
             )
-            is_plug_inserted_in_socket = algo_utils.check_plug_inserted_in_socket(  # TODO(dhanush): only plug pos and keypoints
+            is_plug_inserted_in_socket = algo_utils.check_plug_inserted_in_socket(  # NOTE: only uses plug pose, should be fine
                 plug_pos=self.plug_pos,
                 socket_pos=self.socket_pos,
                 keypoints_plug=self.keypoints_plug,
@@ -435,7 +438,7 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
             )
 
             # Success bonus: Compute reward scale based on whether plug is engaged with socket, as well as closeness to full insertion
-            engagement_reward_scale = algo_utils.get_engagement_reward_scale(  # TODO(dhanush): only plug pos and keypoints
+            engagement_reward_scale = algo_utils.get_engagement_reward_scale(  # NOTE: only uses plug pose, should be fine
                 plug_pos=self.plug_pos,
                 socket_pos=self.socket_pos,
                 is_plug_engaged_w_socket=is_plug_engaged_w_socket,
@@ -462,7 +465,7 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
                 )
 
             # SBC: Compute reward scale based on curriculum difficulty
-            sbc_rew_scale = algo_utils.get_curriculum_reward_scale(  # TODO(dhanush): should not be affected?
+            sbc_rew_scale = algo_utils.get_curriculum_reward_scale(  # NOTE(dhanush): this should be fine
                 cfg_task=self.cfg_task, curr_max_disp=self.curr_max_disp
             )
 
@@ -477,7 +480,7 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
             self.extras["curr_max_disp"] = self.curr_max_disp
 
             # SBC: Update curriculum difficulty based on success rate
-            self.curr_max_disp = algo_utils.get_new_max_disp(  # TODO(dhanush): should not be affected?
+            self.curr_max_disp = algo_utils.get_new_max_disp(  # NOTE(dhanush): this should be fine
                 curr_success=self.extras["insertion_successes"],
                 cfg_task=self.cfg_task,
                 curr_max_disp=self.curr_max_disp,
@@ -500,11 +503,14 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         # Close gripper onto plug
         self.disable_gravity()  # to prevent plug from falling
         self._reset_object()  # TODO(dhanush)
+        # TODO(dhanush): Hopefully after solving IK, we dont not have to anymore move towards it 
+        # Hence commneted out moving to grasp and grasping/closing the gripper part
+        """
         self._move_gripper_to_grasp_pose(
             sim_steps=self.cfg_task.env.num_gripper_move_sim_steps
         )
-        # TODO(dhanush) : Attach the peg to the link itself
-        self.close_gripper(sim_steps=self.cfg_task.env.num_gripper_close_sim_steps)  # TODO(dhanush) : replace with attach to gripper
+        self.close_gripper(sim_steps=self.cfg_task.env.num_gripper_close_sim_steps)
+        """
         self.enable_gravity()
 
         # Get plug SDF in goal pose for SDF-based reward
@@ -525,17 +531,17 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         self.dof_pos[:] = torch.cat(
             (
                 torch.tensor(
-                    self.cfg_task.randomize.franka_arm_initial_dof_pos,  # TODO(dhanush) : set KUKA angles
+                    self.cfg_task.randomize.franka_arm_initial_dof_pos,  # TODO(dhanush) : replace with KUKA-compatible angles
                     device=self.device,
-                ),
-                torch.tensor(
-                    [self.asset_info_franka_table.franka_gripper_width_max],  # TODO(dhanush) : this is not needed for us. Remove
-                    device=self.device,
-                ),
-                torch.tensor(
-                    [self.asset_info_franka_table.franka_gripper_width_max],  # TODO(dhanush) : this is not needed for us. Remove
-                    device=self.device,
-                ),
+                )
+                # torch.tensor(
+                #     [self.asset_info_franka_table.franka_gripper_width_max],  # TODO(dhanush) : this is not needed for us. Remove
+                #     device=self.device,
+                # ),
+                # torch.tensor(
+                #     [self.asset_info_franka_table.franka_gripper_width_max],  # TODO(dhanush) : this is not needed for us. Remove
+                #     device=self.device,
+                # ),
             ),
             dim=-1,
         ).unsqueeze(
@@ -546,9 +552,11 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         self.dof_vel[:, :] = 0.0  # shape = (num_envs, num_dofs)
         self.dof_torque[:, :] = 0.0
         self.ctrl_target_dof_pos = self.dof_pos.clone()
-        # TODO(dhanush): This is not needed for us
+        # NOTE(dhanush): No finger-tips in our setup, so commenting out below
+        '''
         self.ctrl_target_fingertip_centered_pos = self.fingertip_centered_pos.clone()
         self.ctrl_target_fingertip_centered_quat = self.fingertip_centered_quat.clone()
+        '''
 
         # Set DOF state  # TODO(dhanush): Validate this
         kuka_actor_ids_sim = self.kuka_actor_ids_sim.clone().to(dtype=torch.int32)
@@ -771,7 +779,7 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         self.generate_ctrl_signals()  # TODO(dhanush)
 
     def _move_gripper_to_grasp_pose(self, sim_steps):
-        # TODO(dhanush): Refactor
+        # NOTE(dhanush): Hopefully this is not needed for us, since we should directly spawn at desired pose 
         """Define grasp pose for plug and move gripper to pose."""
 
         # Set target_pos

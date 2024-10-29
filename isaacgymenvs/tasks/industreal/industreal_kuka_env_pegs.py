@@ -234,13 +234,14 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
         self.table_handles = []
         self.shape_ids = []
         self.kuka_actor_ids_sim = []  # within-sim indices
-        self.plug_actor_ids_sim = []  # within-sim indices
+        # self.plug_actor_ids_sim = []  # within-sim indices  # NOTE(dhanush): should not needed since combined with robot EEF
         self.socket_actor_ids_sim = []  # within-sim indices
         self.table_actor_ids_sim = []  # within-sim indices
         actor_count = 0
 
+        # NOTE(dhanush): plug widths should not be needed.
         self.plug_grasp_offsets = []
-        self.plug_widths = []
+        # self.plug_widths = []
         self.socket_heights = []
         self.asset_indices = []
 
@@ -257,6 +258,8 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
             subassembly = self.cfg_env.env.desired_subassemblies[j]
             components = list(self.asset_info_insertion[subassembly])
 
+            # NOTE(dhanush): We combine plug with robot EEF, so this actor is not needed
+            '''
             plug_pose = gymapi.Transform()
             plug_pose.p.x = 0.0
             plug_pose.p.y = self.cfg_env.env.plug_lateral_offset
@@ -267,6 +270,7 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
             )
             self.plug_actor_ids_sim.append(actor_count)
             actor_count += 1
+            '''
 
             socket_pose = gymapi.Transform()
             socket_pose.p.x = 0.0
@@ -286,43 +290,45 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
             actor_count += 1
 
             # ------------------------------ #
-            # TODO(dhanush) : replace with kuka's appropriate link 
+            # TODO(dhanush) : Validate | changed link7 -> iiwa7_link_7
             link7_id = self.gym.find_actor_rigid_body_index(
-                env_ptr, kuka_handle, "panda_link7", gymapi.DOMAIN_ACTOR
+                env_ptr, kuka_handle, "iiwa7_link_7", gymapi.DOMAIN_ACTOR
             )
-            # TODO(dhanush) : replace with kuka's appropriate link
-            hand_id = self.gym.find_actor_rigid_body_index(
-                env_ptr, kuka_handle, "panda_hand", gymapi.DOMAIN_ACTOR
+            # TODO(dhanush) : Validate | changed link7 -> cross_peg | hand_id -> peg_id
+            peg_id = self.gym.find_actor_rigid_body_index(
+                env_ptr, kuka_handle, "cross_peg", gymapi.DOMAIN_ACTOR
             )
-            # TODO(dhanush) : replace with kuka's appropriate link
+            # TODO(dhanush) : should not need this ?
             left_finger_id = self.gym.find_actor_rigid_body_index(
                 env_ptr, kuka_handle, "panda_leftfinger", gymapi.DOMAIN_ACTOR
             )
-            # TODO(dhanush) : replace with kuka's appropriate link
+            # TODO(dhanush) : should not need this ?
             right_finger_id = self.gym.find_actor_rigid_body_index(
                 env_ptr, kuka_handle, "panda_rightfinger", gymapi.DOMAIN_ACTOR
             )
             # TODO(dhanush) : replace with kuka's appropriate link
-            self.shape_ids = [link7_id, hand_id, left_finger_id, right_finger_id]
+            # NOTE: originally -> [link7_id, hand_id, left_finger_id, right_finger_id]
+            self.shape_ids = [link7_id, peg_id]  # peg_id not included on purpose.
 
-            # TODO(dhanush) : replace with kuka's appropriate link
-            franka_shape_props = self.gym.get_actor_rigid_shape_properties(
+            # TODO(dhanush) : Validate...
+            kuka_shape_props = self.gym.get_actor_rigid_shape_properties(
                 env_ptr, kuka_handle
             )
             for shape_id in self.shape_ids:
-                franka_shape_props[
+                kuka_shape_props[
                     shape_id
                 ].friction = self.cfg_base.env.franka_friction
-                franka_shape_props[shape_id].rolling_friction = 0.0  # default = 0.0
-                franka_shape_props[shape_id].torsion_friction = 0.0  # default = 0.0
-                franka_shape_props[shape_id].restitution = 0.0  # default = 0.0
-                franka_shape_props[shape_id].compliance = 0.0  # default = 0.0
-                franka_shape_props[shape_id].thickness = 0.0  # default = 0.0
+                kuka_shape_props[shape_id].rolling_friction = 0.0  # default = 0.0
+                kuka_shape_props[shape_id].torsion_friction = 0.0  # default = 0.0
+                kuka_shape_props[shape_id].restitution = 0.0  # default = 0.0
+                kuka_shape_props[shape_id].compliance = 0.0  # default = 0.0
+                kuka_shape_props[shape_id].thickness = 0.0  # default = 0.0
             self.gym.set_actor_rigid_shape_properties(
-                env_ptr, kuka_handle, franka_shape_props
+                env_ptr, kuka_handle, kuka_shape_props
             )
-            # ------------------------------ #
 
+            # NOTE(dhanush) : commented out beacuse the peg is now included in the above part itself
+            '''
             plug_shape_props = self.gym.get_actor_rigid_shape_properties(
                 env_ptr, plug_handle
             )
@@ -337,7 +343,7 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
             self.gym.set_actor_rigid_shape_properties(
                 env_ptr, plug_handle, plug_shape_props
             )
-
+            '''
             socket_shape_props = self.gym.get_actor_rigid_shape_properties(
                 env_ptr, socket_handle
             )
@@ -367,30 +373,33 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
             )
 
             
-            # TODO(dhanush) : replace with kuka's appropriate
-            self.franka_num_dofs = self.gym.get_actor_dof_count(env_ptr, kuka_handle)
+            # TODO(dhanush) : Validate | changed franka_num_dofs -> kuka_num_dofs
+            self.kuka_num_dofs = self.gym.get_actor_dof_count(env_ptr, kuka_handle)
 
             self.gym.enable_actor_dof_force_sensors(env_ptr, kuka_handle)
 
-            # TODO(dhanush): What is this for ?
             plug_grasp_offset = self.asset_info_insertion[subassembly][components[0]][
                 "grasp_offset"
             ]
+            # NOTE(dhanush): width should not be needed.
+            '''
             plug_width = self.asset_info_insertion[subassembly][components[0]][
                 "plug_width"
             ]
+            '''
             socket_height = self.asset_info_insertion[subassembly][components[1]][
                 "height"
             ]
 
             self.env_ptrs.append(env_ptr)
             self.kuka_handles.append(kuka_handle)
-            self.plug_handles.append(plug_handle)
+            # self.plug_handles.append(plug_handle)  # NOTE(dhanush): We combine plug with robot EEF, so this actor is not needed
             self.socket_handles.append(socket_handle)
             self.table_handles.append(table_handle)
 
+            # NOTE(dhanush): should not be needed as noted above
             self.plug_grasp_offsets.append(plug_grasp_offset)
-            self.plug_widths.append(plug_width)
+            # self.plug_widths.append(plug_width)
             self.socket_heights.append(socket_height)
             self.asset_indices.append(j)
 
@@ -402,17 +411,23 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
         self.kuka_actor_ids_sim = torch.tensor(
             self.kuka_actor_ids_sim, dtype=torch.int32, device=self.device
         )
+        # NOTE(dhanush): We combine plug with robot EEF, so this actor is not needed
+        '''
         self.plug_actor_ids_sim = torch.tensor(
             self.plug_actor_ids_sim, dtype=torch.int32, device=self.device
         )
+        '''
         self.socket_actor_ids_sim = torch.tensor(
             self.socket_actor_ids_sim, dtype=torch.int32, device=self.device
         )
 
         # For extracting root pos/quat
+        # NOTE(dhanush): We combine plug with robot EEF, so this actor is not needed
+        '''
         self.plug_actor_id_env = self.gym.find_actor_index(
             env_ptr, "plug", gymapi.DOMAIN_ENV
         )
+        '''
         self.socket_actor_id_env = self.gym.find_actor_index(
             env_ptr, "socket", gymapi.DOMAIN_ENV
         )
@@ -421,14 +436,22 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
         # ------------------------------ #
         # TODO(dhanush): Replace with kuka's appropriate stuff
         self.robot_base_body_id_env = self.gym.find_actor_rigid_body_index(
-            env_ptr, kuka_handle, "panda_link0", gymapi.DOMAIN_ENV
+            env_ptr, kuka_handle, "iiwa7_link_0", gymapi.DOMAIN_ENV  # NOTE(dhanush): changed link7 -> iiwa7_link_0
         )
+        # NOTE(dhanush): check below line after commented out part
+        '''
         self.plug_body_id_env = self.gym.find_actor_rigid_body_index(
             env_ptr, plug_handle, "plug", gymapi.DOMAIN_ENV
+        )
+        '''
+        self.plug_body_id_env = self.gym.find_actor_rigid_body_index(
+            env_ptr, kuka_handle, "plug", gymapi.DOMAIN_ENV  # NOTE(dhanush): We use the kuka handle instead of plug handle, since combined
         )
         self.socket_body_id_env = self.gym.find_actor_rigid_body_index(
             env_ptr, socket_handle, "socket", gymapi.DOMAIN_ENV
         )
+        # NOTE(dhanush): Since hand in our case is the peg itself, so does not matter. Also no gripper stuff
+        '''
         self.hand_body_id_env = self.gym.find_actor_rigid_body_index(
             env_ptr, kuka_handle, "panda_hand", gymapi.DOMAIN_ENV
         )
@@ -441,7 +464,9 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
         self.fingertip_centered_body_id_env = self.gym.find_actor_rigid_body_index(
             env_ptr, kuka_handle, "panda_fingertip_centered", gymapi.DOMAIN_ENV
         )
-
+        '''
+        # NOTE(dhanush): Since this only used to extract the state, we don't need it
+        '''
         self.hand_body_id_env_actor = self.gym.find_actor_rigid_body_index(
             env_ptr, kuka_handle, "panda_hand", gymapi.DOMAIN_ACTOR
         )
@@ -457,29 +482,44 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
                 env_ptr, kuka_handle, "panda_fingertip_centered", gymapi.DOMAIN_ACTOR
             )
         )
+        '''
         # ------------------------------ #
 
+        # NOTE(dhanush): afaik this is no more needed
+        '''
         # For computing body COM pos
+        self.plug_widths = torch.tensor(self.plug_widths, device=self.device)
+        '''
         self.plug_grasp_offsets = torch.tensor(
             self.plug_grasp_offsets, device=self.device
         )
-        self.plug_widths = torch.tensor(self.plug_widths, device=self.device)
         self.socket_heights = torch.tensor(self.socket_heights, device=self.device)
 
     def _acquire_env_tensors(self):
-        # TODO(dhanush): Refactor
+        # TODO(dhanush): Validate
         """Acquire and wrap tensors. Create views."""
 
+        # NOTE(dhanush): Replaced with below code..
+        """
         self.plug_pos = self.root_pos[:, self.plug_actor_id_env, 0:3]
         self.plug_quat = self.root_quat[:, self.plug_actor_id_env, 0:4]
         self.plug_linvel = self.root_linvel[:, self.plug_actor_id_env, 0:3]
         self.plug_angvel = self.root_angvel[:, self.plug_actor_id_env, 0:3]
+        """
+        
+        # NOTE(dhanush): Since plug is no longer seperate actor, we need to use right body index instead.
+        # Also, we cannot use root pos for the same reason, instead we use
+        # TODO(dhanush): Have to verify what the expected origin of plug_pos was, since that makes a lot difference
+        self.plug_pos = self.body_pos[:, self.plug_body_id_env, 0:3]
+        self.plug_quat = self.body_quat[:, self.plug_body_id_env, 0:4]
+        self.plug_linvel = self.body_linvel[:, self.plug_body_id_env, 0:3]
+        self.plug_angvel = self.body_angvel[:, self.plug_body_id_env, 0:3]
 
         self.socket_pos = self.root_pos[:, self.socket_actor_id_env, 0:3]
         self.socket_quat = self.root_quat[:, self.socket_actor_id_env, 0:4]
         self.socket_linvel = self.root_linvel[:, self.socket_actor_id_env, 0:3]
         self.socket_angvel = self.root_angvel[:, self.socket_actor_id_env, 0:3]
-
+        
         # TODO: Define socket height and plug height params in asset info YAML.
         # self.plug_com_pos = self.translate_along_local_z(pos=self.plug_pos,
         #                                                  quat=self.plug_quat,

@@ -115,6 +115,8 @@ class FactoryKukaBase(VecTask, FactoryABCBase):
         self.gym.refresh_jacobian_tensors(self.sim)
         self.gym.refresh_mass_matrix_tensors(self.sim)
 
+        # NOTE(dhanush): This stuff should not be needed
+        '''
         # TODO(dhanush): This is what needs to be replaced
         self.finger_midpoint_pos = (self.left_finger_pos + self.right_finger_pos) * 0.5
         self.fingertip_midpoint_pos = fc.translate_along_local_z(pos=self.finger_midpoint_pos,
@@ -126,7 +128,7 @@ class FactoryKukaBase(VecTask, FactoryABCBase):
                                                                                       (self.fingertip_midpoint_pos - self.fingertip_centered_pos),
                                                                                       dim=1)
         self.fingertip_midpoint_jacobian = (self.left_finger_jacobian + self.right_finger_jacobian) * 0.5  # approximation
-
+        '''
 
     def parse_controller_spec(self):
         # TODO(dhanush): The gripper part, just leave it? figure out
