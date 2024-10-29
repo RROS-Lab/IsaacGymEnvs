@@ -32,7 +32,7 @@ Inherits IndustReal pegs environment class and Factory abstract task class (not 
 
 Trains a peg insertion policy with Simulation-Aware Policy Update (SAPU), SDF-Based Reward, and Sampling-Based Curriculum (SBC).
 
-Can be executed with python train.py task=IndustRealTaskPegsInsert.
+Can be executed with python train.py task=IndustRealKukaTaskPegsInsert.
 """
 
 
@@ -53,7 +53,7 @@ from isaacgymenvs.tasks.industreal.industreal_kuka_env_pegs import IndustRealKuk
 from isaacgymenvs.utils import torch_jit_utils
 
 
-class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
+class IndustRealKukaTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
     def __init__(
         self,
         cfg,
@@ -112,7 +112,7 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         )  # required instance var for VecTask
 
         ppo_path = os.path.join(
-            "train/IndustRealTaskPegsInsertPPO.yaml"
+            "train/IndustRealKukaTaskPegsInsertPPO.yaml"
         )  # relative to Gym's Hydra search path (cfg dir)
         self.cfg_ppo = hydra.compose(config_name=ppo_path)
         self.cfg_ppo = self.cfg_ppo["train"]  # strip superfluous nesting
@@ -127,6 +127,7 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         )
 
         # Compute pose of gripper goal and top of socket in socket frame
+        """
         # TODO(dhanush) : Carefully deal with this! Instead of gripper for us its the plug itself??? Should I rename it or leave it as is?
         self.gripper_goal_pos_local = torch.tensor(
             [
@@ -141,7 +142,22 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
             device=self.device,
         )
         self.gripper_goal_quat_local = self.identity_quat.clone()  # NOTE(dhanush): This should be fine for us too.
-
+        """
+        # ---------------------------- #
+        # NOTE(dhanush): We have a goal position for the hand/link_ee, not gripper. Don't get confused why its not plug_origin
+        self.hand_goal_pos_local = torch.tensor(
+            [
+                [
+                    0.0,
+                    0.0,
+                    (self.cfg_task.env.socket_base_height + self.plug_grasp_offsets[i]),
+                ]
+                for i in range(self.num_envs)
+            ],
+            device=self.device,
+        )
+        self.hand_goal_quat_local = self.identity_quat.clone()
+        # ---------------------------- #
         self.socket_top_pos_local = torch.tensor(
             [[0.0, 0.0, self.socket_heights[i]] for i in range(self.num_envs)],  # TODO(dhanush) : confirm what is socket height. Refer to Notion.
             device=self.device,
@@ -173,7 +189,8 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         # TODO(dhanush) : Refactor
         """Refresh tensors."""
 
-        # NOTE(dhanush): For us this gripper pertains to link_ee
+        # NOTE(dhanush): Commented out since for us, we have goal position for hand/link_ee, not gripper
+        """
         # Compute pose of gripper goal and top of socket in global frame
         self.gripper_goal_quat, self.gripper_goal_pos = torch_jit_utils.tf_combine(
             self.socket_quat,
@@ -188,6 +205,21 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
             self.socket_quat_local,
             self.socket_top_pos_local,
         )
+        """
+        self.hand_goal_quat, self.hand_goal_pos = torch_jit_utils.tf_combine(
+            self.socket_quat,
+            self.socket_pos,
+            self.hand_goal_quat_local,
+            self.hand_goal_pos_local,
+        )
+
+        self.socket_top_quat, self.socket_top_pos = torch_jit_utils.tf_combine(
+            self.socket_quat,
+            self.socket_pos,
+            self.socket_quat_local,
+            self.socket_top_pos_local,
+        )
+
 
         # Add observation noise to socket pos
         self.noisy_socket_pos = torch.zeros_like(
@@ -232,6 +264,8 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
             socket_obs_rot_euler[:, 2],
         )
 
+        # NOTE(dhanush): Commented out since for us, we have goal position for hand/link_ee, not gripper
+        """
         # Compute observation noise on socket
         (
             self.noisy_gripper_goal_quat,
@@ -241,6 +275,16 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
             self.noisy_socket_pos,
             self.gripper_goal_quat_local,
             self.gripper_goal_pos_local,
+        )
+        """
+        (
+            self.noisy_hand_goal_quat,
+            self.noisy_hand_goal_pos,
+        ) = torch_jit_utils.tf_combine(
+            self.noisy_socket_quat,
+            self.noisy_socket_pos,
+            self.hand_goal_quat_local,
+            self.hand_goal_pos_local,
         )
 
         # Compute pos of keypoints on plug and socket in world frame
@@ -279,40 +323,45 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
 
         self.progress_buf[:] += 1
 
-        self.refresh_base_tensors()  # TODO (dhanush): Validate
+        self.refresh_base_tensors()  # TODO (dhanush): Validate...
         self.refresh_env_tensors()  # NOTE : just does pass !
-        self._refresh_task_tensors()  # TODO(dhanush): 
+        self._refresh_task_tensors()  # TODO(dhanush): Validate
         self.compute_observations()
         self.compute_reward()
 
     def compute_observations(self):
-        # TODO(dhanush) : Validate | Reduced the number of observations for the critic, since we dont actually have finger-tips
+        # TODO(dhanush) : Valdiate...
         """Compute observations."""
 
+        # NOTE(dhanush): Now the hand is control point instead
+        """
         delta_pos = self.gripper_goal_pos - self.fingertip_centered_pos
         noisy_delta_pos = self.noisy_gripper_goal_pos - self.fingertip_centered_pos
+        """
+        delta_pos = self.hand_goal_pos - self.hand_pos
+        noisy_delta_pos = self.noisy_hand_goal_pos - self.hand_pos
 
         # Define observations (for actor)
-        # TODO(dhanush) : For us gripper --> link_ee
+        # NOTE(dhanush) : For us gripper --> link_ee/hand | Refactoring in place
         obs_tensors = [
             self.arm_dof_pos,  # 7
             self.pose_world_to_robot_base(
-                self.fingertip_centered_pos, self.fingertip_centered_quat
+                self.hand_pos, self.hand_quat
             )[
                 0
             ],  # 3
             self.pose_world_to_robot_base(
-                self.fingertip_centered_pos, self.fingertip_centered_quat
+                self.hand_pos, self.hand_quat
             )[
                 1
             ],  # 4
             self.pose_world_to_robot_base(
-                self.noisy_gripper_goal_pos, self.noisy_gripper_goal_quat
+                self.noisy_hand_goal_pos, self.noisy_hand_goal_quat
             )[
                 0
             ],  # 3
             self.pose_world_to_robot_base(
-                self.noisy_gripper_goal_pos, self.noisy_gripper_goal_quat
+                self.noisy_hand_goal_pos, self.noisy_hand_goal_quat
             )[
                 1
             ],  # 4
@@ -320,29 +369,29 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         ]  # 3
 
         # Define state (for critic)
-        # NOTE(dhanush): For us there is no finger tip, and the gripper is the link_ee. Hence commneted out below
+        # NOTE(dhanush) : For us gripper --> link_ee/hand | Refactoring in place
         state_tensors = [
             self.arm_dof_pos,  # 7
             self.arm_dof_vel,  # 7
-            # self.pose_world_to_robot_base(
-            #     self.fingertip_centered_pos, self.fingertip_centered_quat
-            # )[
-            #     0
-            # ],  # 3
-            # self.pose_world_to_robot_base(
-            #     self.fingertip_centered_pos, self.fingertip_centered_quat
-            # )[
-            #     1
-            # ],  # 4
-            # self.fingertip_centered_linvel,  # 3
-            # self.fingertip_centered_angvel,  # 3
             self.pose_world_to_robot_base(
-                self.gripper_goal_pos, self.gripper_goal_quat
+                self.hand_pos, self.hand_quat
             )[
                 0
             ],  # 3
             self.pose_world_to_robot_base(
-                self.gripper_goal_pos, self.gripper_goal_quat
+                self.hand_pos, self.hand_quat
+            )[
+                1
+            ],  # 4
+            self.hand_linvel,  # 3
+            self.hand_angvel,  # 3
+            self.pose_world_to_robot_base(
+                self.hand_goal_pos, self.hand_goal_quat
+            )[
+                0
+            ],  # 3
+            self.pose_world_to_robot_base(
+                self.hand_goal_pos, self.hand_goal_quat
             )[
                 1
             ],  # 4
@@ -366,7 +415,7 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         self._update_reset_buf()  # NOTE(dhanush) : This is fine
 
     def _update_rew_buf(self):
-        # TODO(dhanush) : Validate
+        # TODO(dhanush) : Validate...
         """Compute reward at current timestep."""
 
         self.prev_rew_buf = self.rew_buf.clone()
@@ -528,37 +577,95 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         """Reset DOF states, DOF torques, and DOF targets of Franka."""
 
         # Randomize DOF pos
+        # TODO(dhanush): Use IK to compute the dof position to apply.
+        
+        
+        # ---------------------------------------------------- #
+        # --------------------CURRICULUM---------------------- #
+        # Generate randomized downward displacement based on curriculum
+        curr_curriculum_disp_range = (
+            self.curr_max_disp - self.cfg_task.rl.curriculum_height_bound[0]
+        )
+        self.curriculum_disp = self.cfg_task.rl.curriculum_height_bound[
+            0
+        ] + curr_curriculum_disp_range * (
+            torch.rand((self.num_envs,), dtype=torch.float32, device=self.device)
+        )
+
+        # Generate plug pos noise
+        self.plug_pos_xy_noise = 2 * (
+            torch.rand((self.num_envs, 2), dtype=torch.float32, device=self.device)
+            - 0.5
+        )
+        self.plug_pos_xy_noise = self.plug_pos_xy_noise @ torch.diag(
+            torch.tensor(
+                self.cfg_task.randomize.plug_pos_xy_noise,
+                dtype=torch.float32,
+                device=self.device,
+            )
+        )
+        # ---------------------------------------------------- #
+        # NOTE(dhanush): I am not directly manipulating plug (self.plug_pos, self.plug_quat) | Since is attached to the link_ee/KUKA
+        _plug_pos = self.socket_pos.clone()
+        _plug_pos[:, 2] += self.socket_heights
+        _plug_pos[:, 2] += self.curriculum_disp
+
+        # Apply XY noise to plugs not partially inserted into sockets
+        socket_top_height = self.socket_pos[:, 2] + self.socket_heights
+        plug_partial_insert_idx = np.argwhere(
+            _plug_pos[:, 2].cpu().numpy() > socket_top_height.cpu().numpy()
+        ).squeeze()
+        _plug_pos[plug_partial_insert_idx, :2] += self.plug_pos_xy_noise[
+            plug_partial_insert_idx
+        ]
+
+        _plug_quat = self.identity_quat.clone()
+        # ---------------------------------------------------- #
+        # NOTE(dhanush): Solve IK for the _plug_pos and _plug_quat
+
+        _placeholder_ik_solution = [-1.7574766278484677, 0.8403247702305783, 2.015877580177467, 
+                                    -2.0924931236718334, -0.7379389376686856, 1.6256438760537268, 
+                                     1.2689337870766628]
+        # ---------------------------------------------------- #
+        # NOTE(dhanush): Commenting the below stuff, franka and gripper stuff
+        """
         self.dof_pos[:] = torch.cat(
             (
                 torch.tensor(
-                    self.cfg_task.randomize.franka_arm_initial_dof_pos,  # TODO(dhanush) : replace with KUKA-compatible angles
+                    self.cfg_task.randomize.franka_arm_initial_dof_pos,
                     device=self.device,
-                )
-                # torch.tensor(
-                #     [self.asset_info_franka_table.franka_gripper_width_max],  # TODO(dhanush) : this is not needed for us. Remove
-                #     device=self.device,
-                # ),
-                # torch.tensor(
-                #     [self.asset_info_franka_table.franka_gripper_width_max],  # TODO(dhanush) : this is not needed for us. Remove
-                #     device=self.device,
-                # ),
+                ),
+                torch.tensor(
+                    [self.asset_info_franka_table.franka_gripper_width_max],
+                    device=self.device,
+                ),
+                torch.tensor(
+                    [self.asset_info_franka_table.franka_gripper_width_max],
+                    device=self.device,
+                ),
             ),
             dim=-1,
         ).unsqueeze(
             0
         )  # shape = (num_envs, num_dofs)
+        """
+        # TODO(dhanush): Valdiate dimensions
+        self.dof_pos[:] = torch.tensor(_placeholder_ik_solution, device=self.device).unsqueeze(0)
 
         # Stabilize Kuka
         self.dof_vel[:, :] = 0.0  # shape = (num_envs, num_dofs)
         self.dof_torque[:, :] = 0.0
+        # NOTE(dhanush): Afaik this control_target_dof_pos is not require anymore.
+        """
         self.ctrl_target_dof_pos = self.dof_pos.clone()
+        """
         # NOTE(dhanush): No finger-tips in our setup, so commenting out below
         '''
         self.ctrl_target_fingertip_centered_pos = self.fingertip_centered_pos.clone()
         self.ctrl_target_fingertip_centered_quat = self.fingertip_centered_quat.clone()
         '''
 
-        # Set DOF state  # TODO(dhanush): Validate this
+        # Set DOF state  # TODO(dhanush): Setting the state-{pos, vel} of the KUKA
         kuka_actor_ids_sim = self.kuka_actor_ids_sim.clone().to(dtype=torch.int32)
         self.gym.set_dof_state_tensor_indexed(
             self.sim,
@@ -567,7 +674,7 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
             len(kuka_actor_ids_sim),
         )
 
-        # Set DOF torque  # TODO(dhanush): Validate this
+        # Set DOF torque  # TODO(dhanush): Validate...
         self.gym.set_dof_actuation_force_tensor_indexed(
             self.sim,
             gymtorch.unwrap_tensor(self.dof_torque),
@@ -583,7 +690,10 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         """Reset root state of plug and socket."""
 
         self._reset_socket()  # NOTE(dhanush): this seems fine
+        # NOTE(dhanush): This is not need as I intergrated into reset_kuka...
+        """
         self._reset_plug(before_move_to_grasp=True)
+        """
 
     def _reset_socket(self):
         """Reset root state of socket."""
@@ -662,6 +772,97 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         # Simulate one step to apply changes
         self.simulate_and_refresh()
 
+    def _reset_buffers(self):
+        """Reset buffers."""
+
+        self.reset_buf[:] = 0
+        self.progress_buf[:] = 0
+
+    def _set_viewer_params(self):
+        """Set viewer parameters."""
+
+        cam_pos = gymapi.Vec3(-1.0, -1.0, 2.0)
+        cam_target = gymapi.Vec3(0.0, 0.0, 1.5)
+        self.gym.viewer_camera_look_at(self.viewer, None, cam_pos, cam_target)
+
+    def _apply_actions_as_ctrl_targets(
+        self, actions, ctrl_target_gripper_dof_pos, do_scale
+    ):
+        """Apply actions from policy as position/rotation targets."""
+
+        # Interpret actions as target pos displacements and set pos target
+        pos_actions = actions[:, 0:3]
+        if do_scale:
+            pos_actions = pos_actions @ torch.diag(
+                torch.tensor(self.cfg_task.rl.pos_action_scale, device=self.device)
+            )
+        self.ctrl_target_fingertip_centered_pos = (
+            self.fingertip_centered_pos + pos_actions
+        )
+
+        # Interpret actions as target rot (axis-angle) displacements
+        rot_actions = actions[:, 3:6]
+        if do_scale:
+            rot_actions = rot_actions @ torch.diag(
+                torch.tensor(self.cfg_task.rl.rot_action_scale, device=self.device)
+            )
+
+        # Convert to quat and set rot target
+        angle = torch.norm(rot_actions, p=2, dim=-1)
+        axis = rot_actions / angle.unsqueeze(-1)
+        rot_actions_quat = torch_utils.quat_from_angle_axis(angle, axis)
+        if self.cfg_task.rl.clamp_rot:
+            rot_actions_quat = torch.where(
+                angle.unsqueeze(-1).repeat(1, 4) > self.cfg_task.rl.clamp_rot_thresh,
+                rot_actions_quat,
+                torch.tensor([0.0, 0.0, 0.0, 1.0], device=self.device).repeat(
+                    self.num_envs, 1
+                ),
+            )
+        self.ctrl_target_fingertip_centered_quat = torch_utils.quat_mul(
+            rot_actions_quat, self.fingertip_centered_quat
+        )
+
+        self.ctrl_target_gripper_dof_pos = ctrl_target_gripper_dof_pos
+
+        self.generate_ctrl_signals()  # TODO(dhanush)
+
+    # NOTE(dhanush): Below fucntions should not be reqiured...
+    # ---------------------------- #
+    # ---------------------------- #
+    def _move_gripper_to_grasp_pose(self, sim_steps):
+        # NOTE(dhanush): Hopefully this is not needed for us, since we should directly spawn at desired pose 
+        """Define grasp pose for plug and move gripper to pose."""
+
+        # Set target_pos
+        self.ctrl_target_fingertip_midpoint_pos = self.plug_pos.clone()
+        self.ctrl_target_fingertip_midpoint_pos[:, 2] += self.plug_grasp_offsets  # TODO(dhanush): grasp offset for us?
+
+        # Set target rot
+        ctrl_target_fingertip_centered_euler = (
+            torch.tensor(
+                self.cfg_task.randomize.fingertip_centered_rot_initial,
+                device=self.device,
+            )
+            .unsqueeze(0)
+            .repeat(self.num_envs, 1)
+        )
+
+        self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_from_euler_xyz(
+            ctrl_target_fingertip_centered_euler[:, 0],
+            ctrl_target_fingertip_centered_euler[:, 1],
+            ctrl_target_fingertip_centered_euler[:, 2],
+        )
+
+        self.move_gripper_to_target_pose(
+            gripper_dof_pos=self.asset_info_franka_table.franka_gripper_width_max,
+            sim_steps=sim_steps,
+        )
+
+        # Reset plug in case it is knocked away by gripper movement
+        # NOTE(dhanush): It always knocks the plug away lol
+        self._reset_plug(before_move_to_grasp=False)
+
     def _reset_plug(self, before_move_to_grasp):
         # TODO(dhanush): Refactor, since I plan on attaching the plug to the link itself
         """Reset root state of plug."""
@@ -723,90 +924,8 @@ class IndustRealTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         # Simulate one step to apply changes
         self.simulate_and_refresh()
 
-    def _reset_buffers(self):
-        """Reset buffers."""
-
-        self.reset_buf[:] = 0
-        self.progress_buf[:] = 0
-
-    def _set_viewer_params(self):
-        """Set viewer parameters."""
-
-        cam_pos = gymapi.Vec3(-1.0, -1.0, 2.0)
-        cam_target = gymapi.Vec3(0.0, 0.0, 1.5)
-        self.gym.viewer_camera_look_at(self.viewer, None, cam_pos, cam_target)
-
-    def _apply_actions_as_ctrl_targets(
-        self, actions, ctrl_target_gripper_dof_pos, do_scale
-    ):
-        """Apply actions from policy as position/rotation targets."""
-
-        # Interpret actions as target pos displacements and set pos target
-        pos_actions = actions[:, 0:3]
-        if do_scale:
-            pos_actions = pos_actions @ torch.diag(
-                torch.tensor(self.cfg_task.rl.pos_action_scale, device=self.device)
-            )
-        self.ctrl_target_fingertip_centered_pos = (
-            self.fingertip_centered_pos + pos_actions
-        )
-
-        # Interpret actions as target rot (axis-angle) displacements
-        rot_actions = actions[:, 3:6]
-        if do_scale:
-            rot_actions = rot_actions @ torch.diag(
-                torch.tensor(self.cfg_task.rl.rot_action_scale, device=self.device)
-            )
-
-        # Convert to quat and set rot target
-        angle = torch.norm(rot_actions, p=2, dim=-1)
-        axis = rot_actions / angle.unsqueeze(-1)
-        rot_actions_quat = torch_utils.quat_from_angle_axis(angle, axis)
-        if self.cfg_task.rl.clamp_rot:
-            rot_actions_quat = torch.where(
-                angle.unsqueeze(-1).repeat(1, 4) > self.cfg_task.rl.clamp_rot_thresh,
-                rot_actions_quat,
-                torch.tensor([0.0, 0.0, 0.0, 1.0], device=self.device).repeat(
-                    self.num_envs, 1
-                ),
-            )
-        self.ctrl_target_fingertip_centered_quat = torch_utils.quat_mul(
-            rot_actions_quat, self.fingertip_centered_quat
-        )
-
-        self.ctrl_target_gripper_dof_pos = ctrl_target_gripper_dof_pos
-
-        self.generate_ctrl_signals()  # TODO(dhanush)
-
-    def _move_gripper_to_grasp_pose(self, sim_steps):
-        # NOTE(dhanush): Hopefully this is not needed for us, since we should directly spawn at desired pose 
-        """Define grasp pose for plug and move gripper to pose."""
-
-        # Set target_pos
-        self.ctrl_target_fingertip_midpoint_pos = self.plug_pos.clone()
-        self.ctrl_target_fingertip_midpoint_pos[:, 2] += self.plug_grasp_offsets  # TODO(dhanush): grasp offset for us?
-
-        # Set target rot
-        ctrl_target_fingertip_centered_euler = (
-            torch.tensor(
-                self.cfg_task.randomize.fingertip_centered_rot_initial,
-                device=self.device,
-            )
-            .unsqueeze(0)
-            .repeat(self.num_envs, 1)
-        )
-
-        self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_from_euler_xyz(
-            ctrl_target_fingertip_centered_euler[:, 0],
-            ctrl_target_fingertip_centered_euler[:, 1],
-            ctrl_target_fingertip_centered_euler[:, 2],
-        )
-
-        self.move_gripper_to_target_pose(
-            gripper_dof_pos=self.asset_info_franka_table.franka_gripper_width_max,
-            sim_steps=sim_steps,
-        )
-
-        # Reset plug in case it is knocked away by gripper movement
-        # NOTE(dhanush): It always knocks the plug away lol
-        self._reset_plug(before_move_to_grasp=False)
+    def _reset_franka(self):
+        raise NotImplementedError
+    
+    def import_franka_assets(self):
+        raise NotImplementedError

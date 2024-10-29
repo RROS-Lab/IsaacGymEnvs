@@ -96,7 +96,7 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
         self.asset_info_franka_table = hydra.compose(config_name=asset_info_path)
         self.asset_info_franka_table = self.asset_info_franka_table[""][""][""][""][""][
             ""
-        ]["assets"]["industreal"][
+        ]["assets"]["industreal_kuka"][
             "yaml"
         ]  # strip superfluous nesting
 
@@ -175,7 +175,7 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
         return kuka_asset, table_asset
 
     def acquire_base_tensors(self):
-        # TODO(dhanush): Refactor
+        # TODO(dhanush): Validate
         """Acquire and wrap tensors. Create views."""
 
         _root_state = self.gym.acquire_actor_root_state_tensor(
@@ -256,7 +256,7 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
         self.robot_base_quat = self.body_quat[:, self.robot_base_body_id_env, 0:4]  # TODO(dhanush): same as above
 
         # NOTE(dhanush): for the jaobian, we use the id_env_actor, otherwise its id_env, refer to Notion
-        # TODO(dhanush): for franka its "panda_hand" link, for KUKA its iiwa7_link_ee?
+        # TODO(dhanush): Franka hand is our link_ee
         self.hand_pos = self.body_pos[:, self.hand_body_id_env, 0:3]
         self.hand_quat = self.body_quat[:, self.hand_body_id_env, 0:4]
         self.hand_linvel = self.body_linvel[:, self.hand_body_id_env, 0:3]
@@ -265,7 +265,8 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
             :, self.hand_body_id_env_actor - 1, 0:6, 0:7
         ]  # minus 1 because base is fixed
 
-        # TODO(dhanush): No fingers for us, so I have to be remove this.
+        # NOTE(dhanush): No gripper stuff hence commented
+        """
         self.left_finger_pos = self.body_pos[:, self.left_finger_body_id_env, 0:3]
         self.left_finger_quat = self.body_quat[:, self.left_finger_body_id_env, 0:4]
         self.left_finger_linvel = self.body_linvel[:, self.left_finger_body_id_env, 0:3]
@@ -292,9 +293,13 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
         self.right_finger_force = self.contact_force[
             :, self.right_finger_body_id_env, 0:3
         ]
-
+        """
+        # NOTE(dhanush): Also no gripper dof anymore, so commeting out the below one tooo
+        """
         self.gripper_dof_pos = self.dof_pos[:, 7:9]
-
+        """
+        # NOTE(dhanush): No gripper stuff hence commented
+        """
         self.fingertip_centered_pos = self.body_pos[
             :, self.fingertip_centered_body_id_env, 0:3
         ]
@@ -327,15 +332,21 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
         self.fingertip_midpoint_jacobian = (
             self.left_finger_jacobian + self.right_finger_jacobian
         ) * 0.5  # approximation
+        """
 
         # TODO(dhanush): For KUKA, I have to make similar control place holders, for the peg itself
         self.dof_torque = torch.zeros(
             (self.num_envs, self.num_dofs), device=self.device
         )
+        # NOTE(dhanush): No gripper stuff hence commented
+        """
         self.fingertip_contact_wrench = torch.zeros(
             (self.num_envs, 6), device=self.device
         )
+        """
 
+        # NOTE(dhanush): No gripper stuff hence commented
+        """
         self.ctrl_target_fingertip_centered_pos = torch.zeros(
             (self.num_envs, 3), device=self.device
         )
@@ -357,30 +368,38 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
         self.ctrl_target_fingertip_contact_wrench = torch.zeros(
             (self.num_envs, 6), device=self.device
         )
-
+        """
+        # NOTE(dhanush): We use link_ee which corresponds to hand for the control point
+        self.ctrl_target_hand_pos = torch.zeros(
+            (self.num_envs, 3), device=self.device
+        )
+        self.ctrl_target_hand_quat = torch.zeros(
+            (self.num_envs, 4), device=self.device
+        )
         self.prev_actions = torch.zeros(
             (self.num_envs, self.num_actions), device=self.device
         )
         # --------------------------------------- #
 
     def generate_ctrl_signals(self):
-        # TODO(dhanush): Refactor
+        # TODO(dhanush): Validate...
         """Get Jacobian. Set Franka DOF position targets or DOF torques."""
         # Get desired Jacobian
         # TODO(dhanush): Just have to replace with Kuka's counterpart
         if self.cfg_ctrl['jacobian_type'] == 'geometric':
-            self.fingertip_midpoint_jacobian_tf = self.fingertip_centered_jacobian
-        # NOTE(dhanush): This does not seemed to be used in the default config file
-        elif self.cfg_ctrl['jacobian_type'] == 'analytic':
+            # NOTE(dhanush): Since the fingertip stuff is not needed, commenting out
+            # self.fingertip_midpoint_jacobian_tf = self.fingertip_centered_jacobian
+            pass
+        elif self.cfg_ctrl['jacobian_type'] == 'analytic':  # NOTE(dhanush): This does not seemed to be used in the default config file
             self.fingertip_midpoint_jacobian_tf = fc.get_analytic_jacobian(
                 fingertip_quat=self.fingertip_quat,
                 fingertip_jacobian=self.fingertip_centered_jacobian,  # TODO(dhanush): Instead of fingertip center, use ee_link or  peg???
                 num_envs=self.num_envs,
                 device=self.device)
         # Set PD joint pos target or joint torque
-        if self.cfg_ctrl['motor_ctrl_mode'] == 'gym':
+        if self.cfg_ctrl['motor_ctrl_mode'] == 'gym':  # NOTE(dhanush): This is not used...
             self._set_dof_pos_target()
-        elif self.cfg_ctrl['motor_ctrl_mode'] == 'manual':  # NOTE(dhanush): TSI uses manual
+        elif self.cfg_ctrl['motor_ctrl_mode'] == 'manual':  # NOTE(dhanush): TSI uses manual, hence this is the used one....
             self._set_dof_torque()
 
     def _set_dof_pos_target(self):
@@ -403,6 +422,8 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
     def _set_dof_torque(self):
         # TODO(dhanush): Refactor within factory_control.py to make it for KUKA
         """Set Franka DOF torque to move fingertips towards target pose."""
+        # NOTE(dhanush): Chnaging from fingertip center as control point to link_ee 
+        """
         self.dof_torque = fc.compute_dof_torque(
             cfg_ctrl=self.cfg_ctrl,
             dof_pos=self.dof_pos,
@@ -420,6 +441,20 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
             ctrl_target_fingertip_midpoint_quat=self.ctrl_target_fingertip_centered_quat,
             ctrl_target_fingertip_contact_wrench=self.ctrl_target_fingertip_contact_wrench,
             device=self.device)
+        """
+        self.dof_torque = fc.compute_dof_torque_kuka(
+            cfg_ctrl=self.cfg_ctrl,
+            dof_pos=self.dof_pos,
+            dof_vel=self.dof_vel,
+            fingertip_midpoint_pos=self.hand_pos,
+            fingertip_midpoint_quat=self.hand_quat,
+            fingertip_midpoint_linvel=self.hand_linvel,
+            fingertip_midpoint_angvel=self.hand_angvel,
+            jacobian=self.hand_jacobian,
+            arm_mass_matrix=self.arm_mass_matrix,
+            ctrl_target_fingertip_midpoint_pos=self.ctrl_target_hand_pos,
+            ctrl_target_fingertip_midpoint_quat=self.ctrl_target_hand_quat,
+            device=self.device)
         # NOTE(dhanush): Changed to kuka actor ids sim
         self.gym.set_dof_actuation_force_tensor_indexed(self.sim,
                                                         gymtorch.unwrap_tensor(self.dof_torque),
@@ -431,9 +466,9 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
         """Simulate one step, refresh tensors, and render results."""
 
         self.gym.simulate(self.sim)
-        self.refresh_base_tensors()   # TODO
+        self.refresh_base_tensors()   # TODO(dhanush): Validate...
         self.refresh_env_tensors()  # NOTE(dhanush) : just pass IG
-        self._refresh_task_tensors()  # TODO
+        self._refresh_task_tensors()  # TODO(dhanush)
         self.render()
 
     def enable_gravity(self):
@@ -443,10 +478,6 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
         sim_params.gravity = gymapi.Vec3(*self.cfg_base.sim.gravity)
         self.gym.set_sim_params(self.sim, sim_params)
 
-    def attach_to_eef(self, sim_steps):
-        # TODO(dhanush): This is not possible, I think :\
-        raise NotImplementedError
-    
     def pose_world_to_robot_base(self, pos, quat):
         # NOTE(dhanush): This should be fine, only thing is make sure you are using the right base
         """Convert pose from world frame to robot base frame."""
@@ -461,7 +492,7 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
         return pos_in_robot_base, quat_in_robot_base
     
     def move_gripper_to_target_pose(self, gripper_dof_pos, sim_steps):
-        # TODO(dhanush): From my current understanding, this is not needed, since I plan on spawning directly
+        # TODO(dhanush): From my current understanding, "this is not needed", since I plan on spawning directly
         """Move gripper to control target pose."""
 
         for _ in range(sim_steps):

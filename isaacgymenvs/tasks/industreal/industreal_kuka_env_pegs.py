@@ -93,7 +93,7 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
         self.asset_info_insertion = hydra.compose(config_name=asset_info_path)
         self.asset_info_insertion = self.asset_info_insertion[""][""][""][""][""][""][
             "assets"
-        ]["industreal"][  # TODO(dhanush): Refactor ?
+        ]["industreal_kuka"][  # TODO(dhanush): Refactor ?
             "yaml"
         ]  # strip superfluous nesting
 
@@ -294,35 +294,53 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
             link7_id = self.gym.find_actor_rigid_body_index(
                 env_ptr, kuka_handle, "iiwa7_link_7", gymapi.DOMAIN_ACTOR
             )
+            # NOTE(dhanush): Additional link_ee which coreesponds to the hand
+            hand_id = self.gym.find_actor_rigid_body_index(
+                env_ptr, kuka_handle, "peg_id", gymapi.DOMAIN_ACTOR
+            )
             # TODO(dhanush) : Validate | changed link7 -> cross_peg | hand_id -> peg_id
             peg_id = self.gym.find_actor_rigid_body_index(
                 env_ptr, kuka_handle, "cross_peg", gymapi.DOMAIN_ACTOR
             )
-            # TODO(dhanush) : should not need this ?
+            # NOTE(dhanush): commneted below stuff since we don't have gripper anymore
+            """
             left_finger_id = self.gym.find_actor_rigid_body_index(
                 env_ptr, kuka_handle, "panda_leftfinger", gymapi.DOMAIN_ACTOR
             )
-            # TODO(dhanush) : should not need this ?
             right_finger_id = self.gym.find_actor_rigid_body_index(
                 env_ptr, kuka_handle, "panda_rightfinger", gymapi.DOMAIN_ACTOR
             )
-            # TODO(dhanush) : replace with kuka's appropriate link
+            """
+            # TODO(dhanush) : Validate | replaced with respective links | Refer to Notion
             # NOTE: originally -> [link7_id, hand_id, left_finger_id, right_finger_id]
-            self.shape_ids = [link7_id, peg_id]  # peg_id not included on purpose.
-
+            self.shape_ids = [link7_id, peg_id]  # I did not include hand_id, cuz in our case its a proxy body
             # TODO(dhanush) : Validate...
             kuka_shape_props = self.gym.get_actor_rigid_shape_properties(
                 env_ptr, kuka_handle
             )
-            for shape_id in self.shape_ids:
-                kuka_shape_props[
-                    shape_id
-                ].friction = self.cfg_base.env.franka_friction
-                kuka_shape_props[shape_id].rolling_friction = 0.0  # default = 0.0
-                kuka_shape_props[shape_id].torsion_friction = 0.0  # default = 0.0
-                kuka_shape_props[shape_id].restitution = 0.0  # default = 0.0
-                kuka_shape_props[shape_id].compliance = 0.0  # default = 0.0
-                kuka_shape_props[shape_id].thickness = 0.0  # default = 0.0
+            # ------------------------------ #
+            kuka_shape_props[
+                link7_id
+            ].friction = self.cfg_base.env.franka_friction
+            kuka_shape_props[link7_id].rolling_friction = 0.0  # default = 0.0
+            kuka_shape_props[link7_id].torsion_friction = 0.0  # default = 0.0
+            kuka_shape_props[link7_id].restitution = 0.0  # default = 0.0
+            kuka_shape_props[link7_id].compliance = 0.0  # default = 0.0
+            kuka_shape_props[link7_id].thickness = 0.0  # default = 0.0
+            # ------------------------------ #
+            # TODO(dhanush): Why is this index not aval in kuka_shape_props????
+            """
+            kuka_shape_props[
+                peg_id
+            ].friction = self.asset_info_insertion[subassembly][components[0]]["friction"]
+            kuka_shape_props[peg_id].rolling_friction = 0.0  # default = 0.0
+            kuka_shape_props[peg_id].torsion_friction = 0.0  # default = 0.0
+            kuka_shape_props[peg_id].restitution = 0.0  # default = 0.0
+            kuka_shape_props[peg_id].compliance = 0.0  # default = 0.0
+            kuka_shape_props[peg_id].thickness = 0.0  # default = 0.0
+            """
+            # ------------------------------ #
+            
             self.gym.set_actor_rigid_shape_properties(
                 env_ptr, kuka_handle, kuka_shape_props
             )
@@ -422,7 +440,7 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
         )
 
         # For extracting root pos/quat
-        # NOTE(dhanush): We combine plug with robot EEF, so this actor is not needed
+        # NOTE(dhanush): We combine plug with robot EEF, so this separate actor does not exist anymore
         '''
         self.plug_actor_id_env = self.gym.find_actor_index(
             env_ptr, "plug", gymapi.DOMAIN_ENV
@@ -444,17 +462,18 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
             env_ptr, plug_handle, "plug", gymapi.DOMAIN_ENV
         )
         '''
+        # NOTE(dhanush): Franka's "hand" --> "iiwa7_link_ee"
+        self.hand_body_id_env = self.gym.find_actor_rigid_body_index(
+            env_ptr, kuka_handle, "iiwa7_link_ee", gymapi.DOMAIN_ENV
+        )
         self.plug_body_id_env = self.gym.find_actor_rigid_body_index(
-            env_ptr, kuka_handle, "plug", gymapi.DOMAIN_ENV  # NOTE(dhanush): We use the kuka handle instead of plug handle, since combined
+            env_ptr, kuka_handle, "cross_peg", gymapi.DOMAIN_ENV  # NOTE(dhanush): We use the kuka handle instead of plug handle, since combined
         )
         self.socket_body_id_env = self.gym.find_actor_rigid_body_index(
             env_ptr, socket_handle, "socket", gymapi.DOMAIN_ENV
         )
         # NOTE(dhanush): Since hand in our case is the peg itself, so does not matter. Also no gripper stuff
         '''
-        self.hand_body_id_env = self.gym.find_actor_rigid_body_index(
-            env_ptr, kuka_handle, "panda_hand", gymapi.DOMAIN_ENV
-        )
         self.left_finger_body_id_env = self.gym.find_actor_rigid_body_index(
             env_ptr, kuka_handle, "panda_leftfinger", gymapi.DOMAIN_ENV
         )
@@ -465,12 +484,12 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
             env_ptr, kuka_handle, "panda_fingertip_centered", gymapi.DOMAIN_ENV
         )
         '''
+
+        self.hand_body_id_env_actor = self.gym.find_actor_rigid_body_index(
+            env_ptr, kuka_handle, "iiwa7_link_ee", gymapi.DOMAIN_ACTOR
+        )
         # NOTE(dhanush): Since this only used to extract the state, we don't need it
         '''
-        self.hand_body_id_env_actor = self.gym.find_actor_rigid_body_index(
-            env_ptr, kuka_handle, "panda_hand", gymapi.DOMAIN_ACTOR
-        )
-
         self.left_finger_body_id_env_actor = self.gym.find_actor_rigid_body_index(
             env_ptr, kuka_handle, "panda_leftfinger", gymapi.DOMAIN_ACTOR
         )
@@ -509,7 +528,7 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
         
         # NOTE(dhanush): Since plug is no longer seperate actor, we need to use right body index instead.
         # Also, we cannot use root pos for the same reason, instead we use
-        # TODO(dhanush): Have to verify what the expected origin of plug_pos was, since that makes a lot difference
+        # TODO(dhanush): Have to verify what the expected origin of plug_pos was, since that makes a lot difference  | Verify this!!!!
         self.plug_pos = self.body_pos[:, self.plug_body_id_env, 0:3]
         self.plug_quat = self.body_quat[:, self.plug_body_id_env, 0:4]
         self.plug_linvel = self.body_linvel[:, self.plug_body_id_env, 0:3]

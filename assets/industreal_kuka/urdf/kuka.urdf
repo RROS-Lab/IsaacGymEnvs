@@ -280,6 +280,29 @@
   </joint>
   <link name="iiwa7_link_ee">
     </link>
+  <joint name="iiwa7_joint_peg" type="fixed">
+    <parent link="iiwa7_link_ee"/>
+    <child link="cross_peg"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <link name="cross_peg">
+    <inertial>
+      <origin xyz="0 0 0.08289" rpy="0 0 0"/>
+      <mass value="1.41"/>
+      <inertia ixx="0.1" iyy="0.1" izz="0.1" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+    <visual>
+        <geometry>
+            <mesh filename="../mesh/industreal_pegs/industreal_cross_peg.obj"/>
+        </geometry>
+    </visual>
+    <collision>
+        <geometry>
+            <mesh filename="../mesh/industreal_pegs/industreal_cross_peg.obj"/>
+        </geometry>
+        <sdf resolution="256"/>
+    </collision>
+  </link>
   <!-- Load Gazebo lib and set the robot namespace -->
   <!-- <gazebo>
       <plugin name="gazebo_ros_control" filename="libgazebo_ros_control.so">

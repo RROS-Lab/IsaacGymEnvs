@@ -6,7 +6,7 @@ defaults:
     - /factory_schema_config_env
 
 env:
-    env_name: 'IndustRealEnvPegs'
+    env_name: 'IndustRealKukaEnvPegs'
 
     desired_subassemblies: ['cross_peg_hole']
 

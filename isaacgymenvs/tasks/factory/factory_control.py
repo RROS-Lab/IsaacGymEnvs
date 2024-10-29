@@ -175,6 +175,56 @@ def compute_dof_torque(cfg_ctrl,
 
     return dof_torque
 
+def compute_dof_torque_kuka(cfg_ctrl,
+                       dof_pos,
+                       dof_vel,
+                       fingertip_midpoint_pos,
+                       fingertip_midpoint_quat,
+                       fingertip_midpoint_linvel,
+                       fingertip_midpoint_angvel,
+                       jacobian,
+                       arm_mass_matrix,
+                       ctrl_target_fingertip_midpoint_pos,
+                       ctrl_target_fingertip_midpoint_quat,
+                       device):
+    """Compute KUKA DOF torque to move towards target pose."""
+    # NOTE(dhanush): The control variants which are not used, I just did not duplicate them again
+    # TODO(dhanush): Validate this....
+    dof_torque = torch.zeros((cfg_ctrl['num_envs'], 9), device=device)
+
+    task_wrench = torch.zeros((cfg_ctrl['num_envs'], 6), device=device)
+
+    if cfg_ctrl['do_motion_ctrl']:  # NOTE(dhanush): This is what's used
+        pos_error, axis_angle_error = get_pose_error(
+            fingertip_midpoint_pos=fingertip_midpoint_pos,
+            fingertip_midpoint_quat=fingertip_midpoint_quat,
+            ctrl_target_fingertip_midpoint_pos=ctrl_target_fingertip_midpoint_pos,
+            ctrl_target_fingertip_midpoint_quat=ctrl_target_fingertip_midpoint_quat,
+            jacobian_type=cfg_ctrl['jacobian_type'],
+            rot_error_type='axis_angle')
+        delta_fingertip_pose = torch.cat((pos_error, axis_angle_error), dim=1)
+
+        # Set tau = k_p * task_pos_error - k_d * task_vel_error (building towards eq. 3.96-3.98)
+        task_wrench_motion = _apply_task_space_gains(delta_fingertip_pose=delta_fingertip_pose,
+                                                        fingertip_midpoint_linvel=fingertip_midpoint_linvel,
+                                                        fingertip_midpoint_angvel=fingertip_midpoint_angvel,
+                                                        task_prop_gains=cfg_ctrl['task_prop_gains'],
+                                                        task_deriv_gains=cfg_ctrl['task_deriv_gains'])
+
+        if cfg_ctrl['do_inertial_comp']:
+            # Set tau = Lambda * tau, where Lambda is the task-space mass matrix
+            jacobian_T = torch.transpose(jacobian, dim0=1, dim1=2)
+            arm_mass_matrix_task = torch.inverse(jacobian @ torch.inverse(arm_mass_matrix) @ jacobian_T)  # ETH eq. 3.86; geometric Jacobian is assumed
+            task_wrench_motion = (arm_mass_matrix_task @ task_wrench_motion.unsqueeze(-1)).squeeze(-1)
+
+        task_wrench = task_wrench + torch.tensor(cfg_ctrl['motion_ctrl_axes'], device=device).unsqueeze(0) * task_wrench_motion
+
+    # Set tau = J^T * tau, i.e., map tau into joint space as desired
+    jacobian_T = torch.transpose(jacobian, dim0=1, dim1=2)
+    dof_torque[:, 0:7] = (jacobian_T @ task_wrench.unsqueeze(-1)).squeeze(-1)
+
+    return dof_torque
+
 
 def get_pose_error(fingertip_midpoint_pos,
                    fingertip_midpoint_quat,

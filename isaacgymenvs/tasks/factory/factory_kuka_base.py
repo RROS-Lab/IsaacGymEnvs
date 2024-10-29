@@ -102,9 +102,9 @@ class FactoryKukaBase(VecTask, FactoryABCBase):
         raise NotImplementedError
 
     def refresh_base_tensors(self):
-        # TODO(dhanush): Refactor 
+        # TODO(dhanush): Validate...
         """Refresh tensors."""
-        # NOTE: Tensor refresh functions should be called once per step, before setters.
+        # NOTE: Tensor refresh functions should be called once per step, before setters. 
 
         # NOTE(dhanush): This refreshing should be fine as is
         self.gym.refresh_dof_state_tensor(self.sim)
@@ -115,9 +115,8 @@ class FactoryKukaBase(VecTask, FactoryABCBase):
         self.gym.refresh_jacobian_tensors(self.sim)
         self.gym.refresh_mass_matrix_tensors(self.sim)
 
-        # NOTE(dhanush): This stuff should not be needed
+        # TODO(dhanush): This stuff should not be needed, but what should I replace it with...? Maybe not needed
         '''
-        # TODO(dhanush): This is what needs to be replaced
         self.finger_midpoint_pos = (self.left_finger_pos + self.right_finger_pos) * 0.5
         self.fingertip_midpoint_pos = fc.translate_along_local_z(pos=self.finger_midpoint_pos,
                                                                  quat=self.hand_quat,
