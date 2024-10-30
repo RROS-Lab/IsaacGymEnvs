@@ -190,7 +190,7 @@ def compute_dof_torque_kuka(cfg_ctrl,
     """Compute KUKA DOF torque to move towards target pose."""
     # NOTE(dhanush): The control variants which are not used, I just did not duplicate them again
     # TODO(dhanush): Validate this....
-    dof_torque = torch.zeros((cfg_ctrl['num_envs'], 9), device=device)
+    dof_torque = torch.zeros((cfg_ctrl['num_envs'], 7), device=device)
 
     task_wrench = torch.zeros((cfg_ctrl['num_envs'], 6), device=device)
 
