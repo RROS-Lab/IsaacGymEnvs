@@ -296,7 +296,7 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
             )
             # NOTE(dhanush): Additional link_ee which coreesponds to the hand
             hand_id = self.gym.find_actor_rigid_body_index(
-                env_ptr, kuka_handle, "peg_id", gymapi.DOMAIN_ACTOR
+                env_ptr, kuka_handle, "iiwa7_link_ee", gymapi.DOMAIN_ACTOR
             )
             # TODO(dhanush) : Validate | changed link7 -> cross_peg | hand_id -> peg_id
             peg_id = self.gym.find_actor_rigid_body_index(
