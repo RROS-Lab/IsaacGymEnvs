@@ -111,7 +111,7 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
         kuka_file = "kuka.urdf"
 
         kuka_options = gymapi.AssetOptions()
-        kuka_options.flip_visual_attachments = True
+        kuka_options.flip_visual_attachments = False
         kuka_options.fix_base_link = True
         kuka_options.collapse_fixed_joints = False
         kuka_options.thickness = 0.0  # default = 0.02
