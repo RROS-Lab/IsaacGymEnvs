@@ -33,8 +33,14 @@ Imported by base, environment, and task classes. Not directly executed.
 
 import math
 import torch
+import theseus as th
+from theseus.embodied.kinematics import UrdfRobotModel
+from typing import Optional, Tuple
 
 from isaacgymenvs.utils import torch_jit_utils as torch_utils
+
+# FIXME(dhanush)
+KUKA_ASSET_PATH = '/home/rp/forge_baseline/IsaacGymEnvs/isaacgymenvs/tasks/industreal/../../../assets/industreal_kuka/urdf/kuka.urdf'
 
 
 
@@ -224,6 +230,81 @@ def compute_dof_torque_kuka(cfg_ctrl,
     dof_torque[:, 0:7] = (jacobian_T @ task_wrench.unsqueeze(-1)).squeeze(-1)
 
     return dof_torque
+
+def solve_inverse_kinematics(goal_pose_input: th.SE3):
+    _device = torch.device("cpu")
+    num_envs = goal_pose_input.shape[0]  # HACK
+    num_dofs = 7  # HACK
+
+    # TODO(dhanush) : refactor this shit
+    goal_pose_cpu = goal_pose_input.tensor.cpu().clone()
+    goal_pose_cpu_SE3 = th.SE3(tensor=goal_pose_cpu)
+
+    target_joint_position = th.Vector(
+        tensor=torch.zeros(num_envs, num_dofs),
+        name="target_joint_position",
+        dtype=torch.float32,
+    )
+
+    # Create optimization objective
+    ik_objective = th.Objective(dtype=torch.float32)
+    ik_cost = th.AutoDiffCostFunction(
+        optim_vars=(target_joint_position,),
+        aux_vars=(
+            th.SE3(tensor=torch.zeros(num_envs, 3, 4), name="goal_SE3"),
+        ),
+        err_fn=ik_error_fn,
+        name="IK_cost",
+        dim=6,
+        autograd_mode="vmap",
+    )
+    ik_objective.add(ik_cost)
+
+    # Setup optimizer
+    ik_optimizer = th.LevenbergMarquardt(
+        ik_objective,
+        max_iterations=10,
+        step_size=0.5,
+        vectorize=True
+    )
+
+    # Prepare input tensors
+    ik_inputs = {
+        "target_joint_position": torch.zeros(num_envs, num_dofs, device=_device),
+        "goal_SE3": goal_pose_cpu_SE3,
+    }
+
+    # Solve IK
+    with torch.no_grad():
+        ik_solver = th.TheseusLayer(optimizer=ik_optimizer)
+        ik_solver.to(dtype=torch.float32, device=_device)
+        ik_solution, info = ik_solver.forward(
+            input_tensors=ik_inputs,
+            optimizer_kwargs={
+                "track_best_solution": True,
+                "verbose": True,
+                "damping": 0.1,
+            },
+        )
+
+    return ik_solution["target_joint_position"]
+
+def ik_error_fn(optim_vars, aux_vars):
+        (final_joint_position,) = optim_vars
+        (target_ORIGIN_EEF,) = aux_vars
+
+        # HACK(dhanush): Is fine for now :D
+        kinematics_model = UrdfRobotModel(
+            urdf_path=KUKA_ASSET_PATH,
+            link_names=['iiwa7_link_ee'],
+            device=torch.device("cpu"),
+            dtype=torch.float32,
+        )
+
+        SE3_ROBOTBASE_EEF = kinematics_model.forward_kinematics(final_joint_position)['iiwa7_link_ee']
+        # SE3_ORIGIN_EEF = self.SE3_ORIGIN_ROBOTBASE.compose(SE3_ROBOTBASE_EEF)
+        # return SE3_ORIGIN_EEF.local(target_ORIGIN_EEF)
+        return SE3_ROBOTBASE_EEF.local(target_ORIGIN_EEF)
 
 
 def get_pose_error(fingertip_midpoint_pos,

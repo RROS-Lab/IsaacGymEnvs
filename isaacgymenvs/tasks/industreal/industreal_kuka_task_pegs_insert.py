@@ -42,8 +42,10 @@ import omegaconf
 import os
 import torch
 import warp as wp
+import theseus as th
 
 from isaacgym import gymapi, gymtorch, torch_utils
+from isaacgymenvs.tasks.factory.factory_control import solve_inverse_kinematics
 from isaacgymenvs.tasks.factory.factory_schema_class_task import FactoryABCTask
 from isaacgymenvs.tasks.factory.factory_schema_config_task import (
     FactorySchemaConfigTask,
@@ -620,12 +622,13 @@ class IndustRealKukaTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         ]
 
         _plug_quat = self.identity_quat.clone()
+        _plug_quat_theseus = torch.roll(_plug_quat, shifts=1, dims=-1)  # NOTE(dhanush): Converting from xyzw to wxyz
         # ---------------------------------------------------- #
         # NOTE(dhanush): Solve IK for the _plug_pos and _plug_quat
-
-        _placeholder_ik_solution = [-1.7574766278484677, 0.8403247702305783, 2.015877580177467, 
-                                    -2.0924931236718334, -0.7379389376686856, 1.6256438760537268, 
-                                     1.2689337870766628]
+        _placeholder_ik_solution = [-0.5470893275, 1.0882874572, 0.9113772741, -1.2883931368, -0.8585187277, 1.1480810264, -0.2421008096]
+        goal_pose_kuka = th.SE3(x_y_z_quaternion=torch.cat([_plug_pos, _plug_quat_theseus], dim=-1))
+        ik_solution = solve_inverse_kinematics(goal_pose_input=goal_pose_kuka)
+        import pdb; pdb.set_trace()
         # ---------------------------------------------------- #
         # NOTE(dhanush): Commenting the below stuff, franka and gripper stuff
         """
@@ -937,6 +940,7 @@ class IndustRealKukaTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         # Simulate one step to apply changes
         self.simulate_and_refresh()
 
+    # NOTE(dhanush): Only here since part of Schema
     def _reset_franka(self):
         raise NotImplementedError
     

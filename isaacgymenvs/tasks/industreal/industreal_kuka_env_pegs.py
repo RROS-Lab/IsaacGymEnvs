@@ -319,6 +319,8 @@ class IndustRealKukaEnvPegs(IndustRealKukaBase, FactoryABCEnv):
                 env_ptr, kuka_handle
             )
             # ------------------------------ #
+            # HACK(dhanush) : FIXME, index mistmach for some reason
+            link7_id -= 1
             kuka_shape_props[
                 link7_id
             ].friction = self.cfg_base.env.franka_friction
