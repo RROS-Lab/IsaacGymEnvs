@@ -796,8 +796,14 @@ class IndustRealKukaTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
             pos_actions = pos_actions @ torch.diag(
                 torch.tensor(self.cfg_task.rl.pos_action_scale, device=self.device)
             )
+        # NOTE(dhanush): Replacing finger with hand/link_ee
+        """
         self.ctrl_target_fingertip_centered_pos = (
             self.fingertip_centered_pos + pos_actions
+        )
+        """
+        self.ctrl_target_hand_pos = (
+            self.hand_pos + pos_actions
         )
 
         # Interpret actions as target rot (axis-angle) displacements
@@ -819,12 +825,19 @@ class IndustRealKukaTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
                     self.num_envs, 1
                 ),
             )
+        # NOTE(dhanush): Replacing finger with hand/link_ee
+        """
         self.ctrl_target_fingertip_centered_quat = torch_utils.quat_mul(
             rot_actions_quat, self.fingertip_centered_quat
         )
-
+        """
+        self.ctrl_target_hand_quat = torch_utils.quat_mul(
+            rot_actions_quat, self.hand_quat
+        )
+        # NOTE(dhanush): No gripper dof, so removed it
+        """
         self.ctrl_target_gripper_dof_pos = ctrl_target_gripper_dof_pos
-
+        """
         self.generate_ctrl_signals()  # TODO(dhanush)
 
     # NOTE(dhanush): Below fucntions should not be reqiured...
