@@ -14,3 +14,20 @@ cross_peg_hole:
         depth: 0.023
         density: 8000.0
         friction: 0.5
+
+3pin_peg_hole:
+    3pin_peg:
+        urdf_path: 'industreal_3pin_peg'
+        diameter: 0.015983
+        length: 0.050
+        density: 8000.0
+        friction: 1.0
+        grasp_offset: 0.04
+        plug_width: 0.016
+    3pin_hole:
+        urdf_path: 'industreal_3pin_peg'
+        diameter: 0.0165
+        height: 0.028
+        depth: 0.023
+        density: 8000.0
+        friction: 0.5

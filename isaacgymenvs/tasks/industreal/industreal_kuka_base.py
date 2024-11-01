@@ -500,12 +500,11 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
             # and centered is calculated with the assumption that the gripper fingers are perfectly mirrored.
             # Here we **intentionally** use *_centered_* pos and quat instead of *_midpoint_*,
             # since the fingertips are exactly mirrored in the real world.
-            # TODO(dhanush) : Replace with kuka's stuff
             pos_error, axis_angle_error = fc.get_pose_error(
-                fingertip_midpoint_pos=self.fingertip_centered_pos,  # TODO(dhanush): Replace with KUKA's link_ee or peg??
-                fingertip_midpoint_quat=self.fingertip_centered_quat,
-                ctrl_target_fingertip_midpoint_pos=self.ctrl_target_fingertip_midpoint_pos,
-                ctrl_target_fingertip_midpoint_quat=self.ctrl_target_fingertip_midpoint_quat,
+                fingertip_midpoint_pos=self.hand_pos,
+                fingertip_midpoint_quat=self.hand_quat,
+                ctrl_target_fingertip_midpoint_pos=self.ctrl_target_hand_pos,
+                ctrl_target_fingertip_midpoint_quat=self.ctrl_target_hand_quat,
                 jacobian_type=self.cfg_ctrl["jacobian_type"],
                 rot_error_type="axis_angle",
             )
@@ -518,7 +517,7 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
 
             self._apply_actions_as_ctrl_targets(  # internally calls generate_ctrl_signals()
                 actions=actions,
-                ctrl_target_gripper_dof_pos=gripper_dof_pos,  # NOTE(dhanush): Since we do not have a gripper joints, this is not needed
+                ctrl_target_gripper_dof_pos=gripper_dof_pos,  # NOTE(dhanush): No gripper joint, so this is proxy
                 do_scale=False,
             )
 
@@ -528,8 +527,13 @@ class IndustRealKukaBase(FactoryKukaBase, FactoryABCBase):
         # Stabilize Kuka
         self.dof_vel[:, :] = 0.0
         self.dof_torque[:, :] = 0.0
-        self.ctrl_target_fingertip_centered_pos = self.fingertip_centered_pos.clone()  # TODO(dhanush): Repalce with KUKA's link_ee or peg??
+        self.ctrl_target_hand_pos = self.ctrl_target_hand_pos.clone()
+        self.ctrl_target_hand_quat = self.ctrl_target_hand_quat.clone()
+        # NOTE(dhanush): Franka's stuff
+        """
+        self.ctrl_target_fingertip_centered_pos = self.fingertip_centered_pos.clone()
         self.ctrl_target_fingertip_centered_quat = self.fingertip_centered_quat.clone()
+        """
 
         # TODO(dhanush): Do I need to make change for KUKA?
         # Set DOF state
