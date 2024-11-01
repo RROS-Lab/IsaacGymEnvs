@@ -121,6 +121,11 @@ class IndustRealKukaTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
 
     def _acquire_task_tensors(self):
         """Acquire tensors."""
+        self.x_pi_quat = (
+            torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device)
+            .unsqueeze(0)
+            .repeat(self.num_envs, 1)
+        )
 
         self.identity_quat = (
             torch.tensor([0.0, 0.0, 0.0, 1.0], device=self.device)
@@ -549,11 +554,13 @@ class IndustRealKukaTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
     def reset_idx(self, env_ids):
         """Reset specified environments."""
 
-        self._reset_kuka() # TODO(dhanush)
+        # self._reset_kuka() # NOTE(dhanush): tried the IK route for reset_curriculum but that failed on IK library side
+        self._reset_kuka_basic()  # NOTE(dhanush): Just brings KUKA to some basic pose
 
         # Close gripper onto plug
         self.disable_gravity()  # to prevent plug from falling
-        self._reset_object()  # TODO(dhanush)
+        self._reset_object()  # NOTE(dhanush): will only reset the socket position
+        
         # TODO(dhanush): Hopefully after solving IK, we dont not have to anymore move towards it 
         # Hence commneted out moving to grasp and grasping/closing the gripper part
         """
@@ -562,6 +569,25 @@ class IndustRealKukaTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
         )
         self.close_gripper(sim_steps=self.cfg_task.env.num_gripper_close_sim_steps)
         """
+        # NOTE(dhanush): Since IK init failed, will try to move to above aligned and then go to curriculum position
+        # TODO(dhanush): Increase total episode steps since we have two differenet phases now
+        # ---------------------------------------- #
+        self._move_kuka_to_above_pose(
+            sim_steps=self.cfg_task.env.num_gripper_move_sim_steps,
+            disp=0.075
+        )
+        self._move_kuka_to_above_pose(
+            sim_steps=self.cfg_task.env.num_gripper_move_sim_steps,
+            disp=0.05
+        )
+        self._move_kuka_to_above_pose(
+            sim_steps=self.cfg_task.env.num_gripper_move_sim_steps,
+            disp=0.025
+        )
+        # ---------------------------------------- #
+        self._move_kuka_to_curriculum_pose(
+            sim_steps=self.cfg_task.env.num_gripper_move_sim_steps
+        )
         self.enable_gravity()
 
         # Get plug SDF in goal pose for SDF-based reward
@@ -939,6 +965,110 @@ class IndustRealKukaTaskPegsInsert(IndustRealKukaEnvPegs, FactoryABCTask):
 
         # Simulate one step to apply changes
         self.simulate_and_refresh()
+
+    def _reset_kuka_basic(self):
+        """Reset DOF states, DOF torques, and DOF targets of Franka."""
+        # NOTE(dhanush): Setting KUKA to some kind of home pose
+
+        joint_config_reset = [-0.5470893275, 1.0882874572, 0.9113772741, 
+                              -1.2883931368, -0.8585187277, 1.1480810264, 
+                              -0.2421008096]
+
+        self.dof_pos[:] = torch.tensor(joint_config_reset, device=self.device).unsqueeze(0)
+
+        # Stabilize Kuka
+        self.dof_vel[:, :] = 0.0  # shape = (num_envs, num_dofs)
+        self.dof_torque[:, :] = 0.0
+
+        # Set DOF state
+        kuka_actor_ids_sim = self.kuka_actor_ids_sim.clone().to(dtype=torch.int32)
+        self.gym.set_dof_state_tensor_indexed(
+            self.sim,
+            gymtorch.unwrap_tensor(self.dof_state),
+            gymtorch.unwrap_tensor(kuka_actor_ids_sim),
+            len(kuka_actor_ids_sim),
+        )
+
+        # Set DOF torque
+        self.gym.set_dof_actuation_force_tensor_indexed(
+            self.sim,
+            gymtorch.unwrap_tensor(self.dof_torque),
+            gymtorch.unwrap_tensor(kuka_actor_ids_sim),
+            len(kuka_actor_ids_sim),
+        )
+
+        # Simulate one step to apply changes
+        self.simulate_and_refresh()
+
+    def _move_kuka_to_above_pose(self, sim_steps, disp):
+        """Move robot to above aligned pose """
+
+        # Target position is fine...
+        # HACK for orientation
+        self.ctrl_target_hand_pos = self.socket_pos.clone()
+        self.ctrl_target_hand_pos[:, 2] += self.socket_heights
+        self.ctrl_target_hand_pos[:, 2] += 0.05  # TODO(dhanush): assiming identity quat... | From {PEG} to {LINK_EE}
+        self.ctrl_target_hand_pos[:, 2] += disp  # NOTE(dhanush): DISP for above pose
+        self.ctrl_target_hand_quat = self.x_pi_quat.clone()  # Since we dictate link_ee and not peg axis
+
+        self.move_gripper_to_target_pose(
+            gripper_dof_pos=self.asset_info_franka_table.franka_gripper_width_max,
+            sim_steps=sim_steps,
+        )
+
+    def _move_kuka_to_curriculum_pose(self, sim_steps):
+        """Move robot to pose defined by curriculum"""
+
+        # get curriculum
+        self._update_curriculum()
+
+        # Set target_pos
+        self.ctrl_target_hand_pos = self.socket_pos.clone()
+        self.ctrl_target_hand_pos[:, 2] += self.socket_heights
+        self.ctrl_target_hand_pos[:, 2] += 0.05  # TODO(dhanush): assiming identity quat... | From {PEG} to {LINK_EE}
+        self.ctrl_target_hand_pos[:, 2] -= self.curriculum_disp
+
+        # For partially inserted pegs add noise in xy
+        socket_top_height = self.socket_pos[:, 2] + self.socket_heights
+        plug_partial_insert_idx = np.argwhere(
+            self.plug_pos[:, 2].cpu().numpy() > socket_top_height.cpu().numpy()
+        ).squeeze()
+        self.ctrl_target_hand_pos[plug_partial_insert_idx, :2] += self.plug_pos_xy_noise[  # NOTE(dhanush): Bad naming...
+            plug_partial_insert_idx
+        ]
+
+        # set target orientation
+        self.ctrl_target_hand_quat = self.x_pi_quat.clone()  # Since we dictate link_ee and not peg axis
+
+        self.move_gripper_to_target_pose(
+            gripper_dof_pos=self.asset_info_franka_table.franka_gripper_width_max,
+            sim_steps=sim_steps,
+        )
+
+    def _update_curriculum(self):
+
+        curr_curriculum_disp_range = (
+            self.curr_max_disp - self.cfg_task.rl.curriculum_height_bound[0]
+        )
+        self.curriculum_disp = self.cfg_task.rl.curriculum_height_bound[
+            0
+        ] + curr_curriculum_disp_range * (
+            torch.rand((self.num_envs,), dtype=torch.float32, device=self.device)
+        )
+
+        # Generate plug pos noise
+        self.plug_pos_xy_noise = 2 * (
+            torch.rand((self.num_envs, 2), dtype=torch.float32, device=self.device)
+            - 0.5
+        )
+        self.plug_pos_xy_noise = self.plug_pos_xy_noise @ torch.diag(
+            torch.tensor(
+                self.cfg_task.randomize.plug_pos_xy_noise,
+                dtype=torch.float32,
+                device=self.device,
+            )
+        )
+
 
     # NOTE(dhanush): Only here since part of Schema
     def _reset_franka(self):
